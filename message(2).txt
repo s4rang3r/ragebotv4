@@ -1,0 +1,1149 @@
+-- ============================================================
+--  ANTICHEAT BYPASS — do not modify
+-- ============================================================
+Z = Z or {}
+Z.Players = game:GetService("Players")
+Z.LocalPlayer = Z.Players.LocalPlayer
+getgenv().swacd = false
+getgenv().zzaao = false
+getgenv().swuao = false
+
+do
+    Z.AllowKick = false
+
+    local function callerIsGameScript()
+        if type(getcallingscript) ~= "function" then return nil end
+        local ok, caller = pcall(getcallingscript)
+        if ok and typeof(caller) == "Instance" then return true end
+        return false
+    end
+
+    function Z.Kick(msg)
+        Z.AllowKick = true
+        pcall(function() Z.LocalPlayer:Kick(msg) end)
+        task.wait(0.5)
+        pcall(function() if Z.LocalPlayer.Parent then game:Shutdown() end end)
+        Z.AllowKick = false
+    end
+
+    local installed = false
+    pcall(function()
+        if not (hookfunction and newcclosure) then return end
+        local OldKick
+        OldKick = hookfunction(Z.LocalPlayer.Kick, newcclosure(function(plr, msg)
+            if plr ~= Z.LocalPlayer then return OldKick(plr, msg) end
+            if Z.AllowKick then return OldKick(plr, msg) end
+            if callerIsGameScript() == false then return OldKick(plr, msg) end
+            if getgenv().swacd then
+                warn("[strafe ac] blocked client kick: " .. tostring(msg))
+            end
+            return
+        end))
+        installed = true
+    end)
+
+    if not installed then
+        pcall(function()
+            if not (hookmetamethod and newcclosure and getnamecallmethod) then return end
+            local oldNC
+            oldNC = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                if self == Z.LocalPlayer and getnamecallmethod() == "Kick" then
+                    if Z.AllowKick then return oldNC(self, ...) end
+                    if callerIsGameScript() == false then return oldNC(self, ...) end
+                    if getgenv().swacd then
+                        warn("[strafe ac] blocked client kick (namecall): " .. tostring((...)))
+                    end
+                    return
+                end
+                return oldNC(self, ...)
+            end))
+            installed = true
+        end)
+    end
+
+    if not installed then
+        warn("[strafe ac] kick shield unavailable on this executor")
+    end
+end
+
+do
+    local function callerIsMiscController()
+        if type(getcallingscript) == "function" then
+            local ok, caller = pcall(getcallingscript)
+            if ok and caller and caller.Name == "MiscellaneousController" then return true end
+        end
+        if type(debug) ~= "table" or type(debug.traceback) ~= "function" then
+            return false
+        end
+        local okT, trace = pcall(debug.traceback)
+        if okT and type(trace) == "string" then
+            return trace:find("MiscellaneousController", 1, true) ~= nil
+        end
+        return false
+    end
+
+    local function installMetatableHooks()
+        if not (hookfunction and newcclosure) then return false end
+
+        local Old1
+        Old1 = hookfunction(setmetatable, newcclosure(function(Table, MetaTable)
+            if type(MetaTable) == "table" and rawget(MetaTable, "__mode") == "kv" then
+                if callerIsMiscController() then return Old1(Table, {}) end
+            end
+            return Old1(Table, MetaTable)
+        end))
+
+        local renvHooked = false
+        pcall(function()
+            local renv = getrenv()
+            if renv and type(renv.setmetatable) == "function" and renv.setmetatable ~= setmetatable then
+                local OldR
+                OldR = hookfunction(renv.setmetatable, newcclosure(function(Table, MetaTable)
+                    if type(MetaTable) == "table" and rawget(MetaTable, "__mode") == "kv" then
+                        if callerIsMiscController() then return OldR(Table, {}) end
+                    end
+                    return OldR(Table, MetaTable)
+                end))
+                renvHooked = true
+            end
+        end)
+
+        local Old2
+        local rawlenHits = 0
+        Old2 = hookfunction(rawlen, newcclosure(function(Table)
+            rawlenHits += 1
+            if rawlenHits <= 50 then
+                if callerIsMiscController() then return 3 end
+            else
+                hookfunction(rawlen, Old2)
+            end
+            return Old2(Table)
+        end))
+
+        if getgenv().swacd then
+            warn(("[strafe ac] metatable hooks installed (renv: %s)"):format(tostring(renvHooked)))
+        end
+        return true
+    end
+
+    local mtInstalled = pcall(installMetatableHooks)
+    task.spawn(function()
+        if mtInstalled then return end
+        for _ = 1, 3 do
+            task.wait(3)
+            if pcall(installMetatableHooks) then return end
+        end
+        for _ = 1, 3 do
+            task.wait(90)
+            if pcall(installMetatableHooks) then return end
+        end
+    end)
+end
+
+do
+    local acWords = {
+        "anticheat", "anti-cheat", "anti cheat", "detection", "ban",
+        "kick", "security", "moderation", "sentinel", "shield",
+        "exploit", "cheat", "cheater", "hacker",
+    }
+    local acNameCache = setmetatable({}, { __mode = "k" })
+    local function isACName(n)
+        local cached = acNameCache[n]
+        if cached ~= nil then return cached end
+        local key = n
+        n = string.lower(tostring(n or ""))
+        local result = false
+        for _, w in ipairs(acWords) do
+            if n:find(w, 1, true) then result = true; break end
+        end
+        acNameCache[n] = result
+        if type(key) == "string" then acNameCache[key] = result end
+        return result
+    end
+
+    local function checkScript(obj)
+        if (obj:IsA("LocalScript") or obj:IsA("ModuleScript")) and isACName(obj.Name)
+            and obj.Name ~= "FlashbangEffect" and obj.Name ~= "Flashbang"
+            and obj.Name ~= "BANG!" and obj.Name ~= "Very Tragic Banana Peel Accident" then
+            pcall(function() obj.Disabled = true end)
+            pcall(function()
+                obj:GetPropertyChangedSignal("Disabled"):Connect(function()
+                    if not obj.Disabled then pcall(function() obj.Disabled = true end) end
+                end)
+            end)
+            if getgenv().swacd then
+                warn("[strafe ac] disabled script: " .. obj:GetFullName())
+            end
+        end
+    end
+
+    game.DescendantAdded:Connect(function(obj)
+        local c = obj.ClassName
+        if c == "LocalScript" or c == "ModuleScript" then pcall(checkScript, obj) end
+    end)
+
+    task.spawn(function()
+        task.wait(0.5)
+        pcall(function()
+            local descendants = game:GetDescendants()
+            for index = 1, #descendants do
+                local obj = descendants[index]
+                local c = obj.ClassName
+                if c == "LocalScript" or c == "ModuleScript" then checkScript(obj) end
+                if index % 8000 == 0 then task.wait() end
+            end
+        end)
+    end)
+end
+
+pcall(function()
+    local networkClient = game:GetService("NetworkClient")
+    if not networkClient then return end
+    networkClient.ChildAdded:Connect(function(child)
+        pcall(function()
+            local n = string.lower(child.Name or "")
+            if n:find("anticheat") or n:find("detection") or n:find("security") or n:find("sentinel") then
+                child:Destroy()
+            end
+        end)
+    end)
+end)
+
+pcall(function()
+    if not Z.LocalPlayer:FindFirstChild("ClientAlert") then
+        local fake = Instance.new("RemoteEvent")
+        fake.Name = "ClientAlert"
+        fake.Parent = Z.LocalPlayer
+    end
+end)
+
+do
+    local RIVALS_PLACE_IDS = { [17625359962] = true, [5705758350] = true, [129604661913557] = true }
+
+    local function isRivals()
+        if RIVALS_PLACE_IDS[game.PlaceId] then return true end
+        local rs = game:GetService("ReplicatedStorage")
+        if rs:FindFirstChild("Remotes") and rs:FindFirstChild("Modules")
+            and rs.Remotes:FindFirstChild("Replication")
+            and rs.Remotes.Replication:FindFirstChild("Fighter")
+            and rs.Modules:FindFirstChild("EnumLibrary") then return true end
+        return false
+    end
+
+    local function filesMatch()
+        local rs = game:GetService("ReplicatedStorage")
+        local lp = Z.LocalPlayer
+        if not lp then return false end
+        local ps = lp:FindFirstChild("PlayerScripts")
+        if not ps then return false end
+        if not rs:FindFirstChild("Modules") then return false end
+        if not rs.Modules:FindFirstChild("EnumLibrary") then return false end
+        if not rs.Modules:FindFirstChild("Utility") then return false end
+        if not rs.Modules:FindFirstChild("ItemLibrary") then return false end
+        if not ps:FindFirstChild("Controllers") then return false end
+        if not ps.Controllers:FindFirstChild("FighterController") then return false end
+        if not ps.Controllers:FindFirstChild("CameraController") then return false end
+        if not ps.Controllers:FindFirstChild("MechanicsController") then return false end
+        return true
+    end
+
+    if not isRivals() then Z.Kick("mirrorvision: not rivals"); return end
+
+    local attempts = 0
+    while attempts < 30 and not filesMatch() do
+        attempts += 1; task.wait(0.3)
+    end
+    if not filesMatch() then Z.Kick("mirrorvision: rivals files never loaded"); return end
+end
+
+do
+    local pg = Z.LocalPlayer:WaitForChild("PlayerGui", 10)
+    if pg then
+        local appearT = tick()
+        while tick() - appearT < 5 and not pg:FindFirstChild("LoadingScreen") do task.wait(0.1) end
+        if pg:FindFirstChild("LoadingScreen") then
+            local clearT = tick()
+            repeat task.wait(0.25)
+            until not pg:FindFirstChild("LoadingScreen") or (tick() - clearT) > 90
+        end
+    end
+    task.wait(0.2)
+end
+
+do
+    local problems = {}
+    local warnings = {}
+
+    local function runAudit()
+        problems = {}; warnings = {}
+        local rs = game:GetService("ReplicatedStorage")
+        local ps = Z.LocalPlayer:FindFirstChild("PlayerScripts")
+        if not ps then table.insert(problems, "PlayerScripts (missing)"); return false end
+
+        local function resolve(parent, chain, label, critical)
+            local cur = parent
+            for i = 1, #chain do
+                cur = cur and cur:FindFirstChild(chain[i])
+                if not cur then
+                    local partial = table.concat(chain, "/", 1, i)
+                    local target = critical == false and warnings or problems
+                    table.insert(target, ("%s (missing %s)"):format(label, partial))
+                    return nil
+                end
+            end
+            return cur
+        end
+
+        local function tryRequire(root, chain, label, critical)
+            local inst = resolve(root, chain, label, critical)
+            if not inst then return nil end
+            if not inst:IsA("ModuleScript") then
+                table.insert(critical == false and warnings or problems, label .. " (not a modulescript)")
+                return nil
+            end
+            local ok, result = pcall(require, inst)
+            if not ok or type(result) ~= "table" then
+                table.insert(critical == false and warnings or problems, label .. " (require failed)")
+                return nil
+            end
+            return result
+        end
+
+        local function checkField(mod, field, label, critical)
+            if not mod then return end
+            if mod[field] == nil then
+                local okM, mt = pcall(getmetatable, mod)
+                local proto = (okM and type(mt) == "table") and rawget(mt, "__index") or nil
+                if type(proto) == "table" and proto[field] ~= nil then return end
+                table.insert(critical == false and warnings or problems,
+                    ("%s.%s (missing)"):format(label, field))
+            end
+        end
+
+        local function checkRemote(parent, Name, label, critical)
+            local r = parent and parent:FindFirstChild(Name)
+            if not r then
+                table.insert(critical == false and warnings or problems, label .. (critical == false and " (missing)" or ""))
+                return nil
+            end
+            return r
+        end
+
+        local repFighter = resolve(rs, {"Remotes","Replication","Fighter"}, "Remotes/Replication/Fighter", true)
+        if repFighter then
+            checkRemote(repFighter, "UseItem", "Remotes/Replication/Fighter/UseItem", true)
+            checkRemote(repFighter, "UpdateCameraRotation", "Remotes/Replication/Fighter/UpdateCameraRotation", true)
+            if #problems > 0 then return false end
+            checkRemote(repFighter, "PickWeapons", "Remotes/Replication/Fighter/PickWeapons", false)
+            checkRemote(repFighter, "SetControls", "Remotes/Replication/Fighter/SetControls", false)
+        end
+        local duels = resolve(rs, {"Remotes","Duels"}, "Remotes/Duels", false)
+        if duels then
+            checkRemote(duels, "RespawnNow", "Remotes/Duels/RespawnNow", false)
+            checkRemote(duels, "Vote", "Remotes/Duels/Vote", false)
+        end
+        local matchmaking = resolve(rs, {"Remotes","Matchmaking"}, "Remotes/Matchmaking", false)
+        if matchmaking then checkRemote(matchmaking, "JoinQueue", "Remotes/Matchmaking/JoinQueue", false) end
+        local dataRem = resolve(rs, {"Remotes","Data"}, "Remotes/Data", false)
+        if dataRem then
+            checkRemote(dataRem, "EquipCosmetic", "Remotes/Data/EquipCosmetic", false)
+            checkRemote(dataRem, "FavoriteCosmetic", "Remotes/Data/FavoriteCosmetic", false)
+        end
+
+        local enumLib  = tryRequire(rs, {"Modules","EnumLibrary"},  "Modules/EnumLibrary",  true)
+        checkField(enumLib, "ToEnum", "Modules/EnumLibrary", true)
+        checkField(enumLib, "WaitForEnumBuilder", "Modules/EnumLibrary", false)
+        local utilMod  = tryRequire(rs, {"Modules","Utility"},       "Modules/Utility",       true)
+        checkField(utilMod, "Raycast",              "Modules/Utility", true)
+        checkField(utilMod, "PlayParticles",        "Modules/Utility", true)
+        checkField(utilMod, "EncodeCFrame",         "Modules/Utility", true)
+        checkField(utilMod, "EncodeCameraRotation", "Modules/Utility", true)
+        local itemLib  = tryRequire(rs, {"Modules","ItemLibrary"},   "Modules/ItemLibrary",   true)
+        checkField(itemLib, "Items",      "Modules/ItemLibrary", true)
+        checkField(itemLib, "ViewModels", "Modules/ItemLibrary", true)
+        local cosLib   = tryRequire(rs, {"Modules","CosmeticLibrary"}, "Modules/CosmeticLibrary", true)
+        checkField(cosLib, "Cosmetics",     "Modules/CosmeticLibrary", true)
+        checkField(cosLib, "OwnsCosmetic",  "Modules/CosmeticLibrary", true)
+        local repClass = tryRequire(rs, {"Modules","ReplicatedClass"}, "Modules/ReplicatedClass", true)
+        checkField(repClass, "ToEnum", "Modules/ReplicatedClass", true)
+        local fc  = tryRequire(ps, {"Controllers","FighterController"},  "Controllers/FighterController",  true)
+        checkField(fc, "GetFighter",   "Controllers/FighterController", true)
+        checkField(fc, "LocalFighter", "Controllers/FighterController", false)
+        local cc  = tryRequire(ps, {"Controllers","CameraController"},   "Controllers/CameraController",   true)
+        checkField(cc, "Update",       "Controllers/CameraController", true)
+        checkField(cc, "MimicRotation","Controllers/CameraController", true)
+        checkField(cc, "GetBaseCFrame","Controllers/CameraController", false)
+        local mc  = tryRequire(ps, {"Controllers","MechanicsController"},"Controllers/MechanicsController",true)
+        checkField(mc, "IsSliding",         "Controllers/MechanicsController", false)
+        checkField(mc, "_sliding_velocity", "Controllers/MechanicsController", false)
+        local pdc = tryRequire(ps, {"Controllers","PlayerDataController"},"Controllers/PlayerDataController",true)
+        checkField(pdc, "Get",           "Controllers/PlayerDataController", true)
+        checkField(pdc, "GetWeaponData", "Controllers/PlayerDataController", true)
+        checkField(pdc, "CurrentData",   "Controllers/PlayerDataController", true)
+        tryRequire(ps, {"Modules","Items","Gun"},    "Modules/Items/Gun",    false)
+        tryRequire(ps, {"Modules","Items","Katana"}, "Modules/Items/Katana", false)
+        local gunTypes   = tryRequire(ps, {"Modules","ItemTypes","Gun"},   "Modules/ItemTypes/Gun",   true)
+        checkField(gunTypes,   "StartShooting", "Modules/ItemTypes/Gun",   true)
+        checkField(gunTypes,   "_Recoil",       "Modules/ItemTypes/Gun",   true)
+        local meleeTypes = tryRequire(ps, {"Modules","ItemTypes","Melee"}, "Modules/ItemTypes/Melee", true)
+        checkField(meleeTypes, "StartShooting", "Modules/ItemTypes/Melee", true)
+        local tracerMod  = tryRequire(ps, {"Modules","TracerEffect"},      "Modules/TracerEffect",    true)
+        checkField(tracerMod, "Play", "Modules/TracerEffect", true)
+        local cliItem = tryRequire(ps, {"Modules","ClientReplicatedClasses","ClientFighter","ClientItem"}, "ClientItem", true)
+        checkField(cliItem, "Input", "ClientItem", true)
+        local cliVM   = tryRequire(ps, {"Modules","ClientReplicatedClasses","ClientFighter","ClientItem","ClientViewModel"}, "ClientViewModel", true)
+        checkField(cliVM, "new", "ClientViewModel", true)
+        local otherI  = tryRequire(ps, {"Modules","ClientReplicatedClasses","ClientFighter","ClientItem","ItemInterface","Other"}, "ItemInterface/Other", false)
+        checkField(otherI, "Update", "ItemInterface/Other", false)
+        local rctrl = tryRequire(ps, {"Modules","ReplicatedController"}, "Modules/ReplicatedController", false)
+        checkField(rctrl, "_ObjectChanged", "Modules/ReplicatedController", false)
+        local dctrl = tryRequire(ps, {"Controllers","DuelController"}, "Controllers/DuelController", false)
+        checkField(dctrl, "CurrentObject", "Controllers/DuelController", false)
+
+        return #problems == 0
+    end
+
+    local passed = runAudit()
+    if not passed then task.wait(3); passed = runAudit() end
+
+    if not passed then
+        if getgenv().swacd then
+            for _, p in ipairs(problems) do warn("[strafe audit] FAIL: " .. p) end
+        end
+        local shown = {}; local maxShow = 6
+        for i = 1, math.min(#problems, maxShow) do table.insert(shown, problems[i]) end
+        if #problems > maxShow then table.insert(shown, ("+%d more"):format(#problems - maxShow)) end
+        Z.Kick("mirrorvision: rivals updated, script outdated:\n" .. table.concat(shown, "\n"))
+        return
+    end
+
+    if getgenv().swacd then
+        if #warnings > 0 then for _, w in ipairs(warnings) do warn("[strafe audit] warn: " .. w) end end
+        warn("[strafe audit] all hook targets verified")
+    end
+end
+
+task.spawn(function()
+    pcall(LPH_NO_VIRTUALIZE(function()
+        if type(getgc) ~= "function" then return end
+        local rf  = game:GetService("ReplicatedFirst")
+        local ls3 = rf:WaitForChild("LocalScript3", 10)
+        local BAD_CONSTANTS = {
+            "TakeTheL","ban","kick","disconnect","cheater",
+            "exploiter","exploit","hacker","detected","shutdown",
+        }
+        local function isACScript(scr)
+            if scr == ls3 then return true end
+            local ok, str = pcall(tostring, scr)
+            if ok and type(str) == "string" and str:find("LoadingScreen") then return true end
+            if scr and scr:IsDescendantOf(rf) then
+                local n = string.lower(scr.Name or "")
+                if n:find("check") or n:find("detect") or n:find("anticheat") then return true end
+            end
+            return false
+        end
+        local hooked = 0
+        local gc  = getgc(false)
+        local isl = type(islclosure) == "function" and islclosure or nil
+        for index = 1, #gc do
+            local f = gc[index]
+            if type(f) == "function" and (isl == nil or isl(f)) then
+                local ok, e = pcall(getfenv, f)
+                if ok and type(e) == "table" then
+                    local ok2, scr = pcall(rawget, e, "script")
+                    if ok2 and scr and typeof(scr) == "Instance" and isACScript(scr) then
+                        local ok3, cs = pcall(debug.getconstants, f)
+                        if ok3 and type(cs) == "table" then
+                            for _, k in ipairs(cs) do
+                                if type(k) == "string" then
+                                    local hit = false
+                                    for _, bad in ipairs(BAD_CONSTANTS) do
+                                        if k:find(bad) then hit = true; break end
+                                    end
+                                    if hit then
+                                        pcall(function() hookfunction(f, function() end) end)
+                                        hooked += 1; break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if index % 1500 == 0 then task.wait() end
+        end
+        if getgenv().swacd then
+            warn(("[strafe ac] gc scan neutralized %d functions"):format(hooked))
+        end
+    end))
+end)
+
+-- ============================================================
+--  ORBIT / FOLLOW
+-- ============================================================
+
+local Players              = game:GetService("Players")
+local RunService           = game:GetService("RunService")
+local UserInputService     = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local LocalPlayer          = Players.LocalPlayer
+
+-- ============== SETTINGS ==============
+local OFFSET_DISTANCE    = 5
+local FOLLOW_UPDATE_RATE = 0.05
+local DEFAULT_KEYBIND    = Enum.KeyCode.X
+local FOLLOW_KEYBIND     = Enum.KeyCode.Z
+local UI_TOGGLE_KEYBIND  = Enum.KeyCode.RightShift
+local GUI_TOGGLE_KEYBIND = Enum.KeyCode.Insert
+local AUTO_RESPAWN       = true
+local RESPAWN_DELAY      = 0.3
+
+-- ============== STATE ==============
+local orbitEnabled         = false
+local followEnabled        = false
+local currentKeybind       = DEFAULT_KEYBIND
+local currentFollowKeybind = FOLLOW_KEYBIND
+local waitingForKeybind    = nil
+local targetPlayerName     = ""
+local targetPlayerPtr      = nil
+local followConnection     = nil
+local accumDT              = 0
+local guiVisible           = true
+local keybindPanelVisible  = false
+local respawnWatching      = false
+
+-- ============== UTILITY ==============
+local function getLocalCharacter()
+    local char = LocalPlayer.Character
+    if not char then return nil, nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum or hum.Health <= 0 then return nil, nil end
+    return char, hrp
+end
+
+local function isAlive(plr)
+    if not plr or not plr.Character then return false end
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+    return hrp ~= nil and hum ~= nil and hum.Health > 0
+end
+
+local function setTarget(plr)
+    if plr == nil then
+        targetPlayerName = ""; targetPlayerPtr = nil
+    else
+        targetPlayerName = plr.Name; targetPlayerPtr = plr
+    end
+end
+
+local function getTargetHRP()
+    local _, localHRP = getLocalCharacter()
+    if not localHRP then return nil, nil end
+
+    if targetPlayerPtr ~= nil or targetPlayerName ~= "" then
+        local plr = targetPlayerPtr
+        if plr and not plr.Parent then setTarget(nil); plr = nil end
+        if not plr and targetPlayerName ~= "" then
+            plr = Players:FindFirstChild(targetPlayerName)
+        end
+        if plr and plr ~= LocalPlayer then
+            if isAlive(plr) then
+                return plr, plr.Character:FindFirstChild("HumanoidRootPart")
+            else
+                return nil, nil
+            end
+        end
+        setTarget(nil)
+    end
+
+    local bestPlr, bestHRP, bestDist = nil, nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if not isAlive(plr) then continue end
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local d = (localHRP.Position - hrp.Position).Magnitude
+        if d < bestDist then bestDist = d; bestPlr = plr; bestHRP = hrp end
+    end
+    return bestPlr, bestHRP
+end
+
+local function getInFrontCFrame(targetHRP)
+    local inFront = targetHRP.CFrame * CFrame.new(0, 0, -OFFSET_DISTANCE)
+    return CFrame.lookAt(inFront.Position, targetHRP.Position)
+end
+
+local function teleportInFront()
+    local _, localHRP = getLocalCharacter()
+    if not localHRP then return end
+    local _, targetHRP = getTargetHRP()
+    if not targetHRP then return end
+    localHRP.CFrame = getInFrontCFrame(targetHRP)
+end
+
+-- ============== AUTO RESPAWN ==============
+-- Pure remote fire only — no input simulation.
+-- RunService.Heartbeat ticks regardless of OS window focus,
+-- so tabbing out never breaks the respawn loop.
+
+local function tryRespawnRemote()
+    local rs    = game:GetService("ReplicatedStorage")
+    local duels = rs:FindFirstChild("Remotes")
+        and rs.Remotes:FindFirstChild("Duels")
+    local remote = duels and duels:FindFirstChild("RespawnNow")
+    if remote and remote:IsA("RemoteEvent") then
+        pcall(function() remote:FireServer() end)
+        return true
+    end
+    return false
+end
+
+local function watchHumanoid(char)
+    if respawnWatching then return end
+    local hum = char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+    respawnWatching = true
+
+    hum.Died:Connect(function()
+        if not AUTO_RESPAWN then respawnWatching = false; return end
+        task.spawn(function()
+            local deadChar = char
+            local attempts = 0
+            -- Heartbeat-based — engine-level, focus-independent
+            local conn
+            conn = RunService.Heartbeat:Connect(function()
+                if not AUTO_RESPAWN
+                or (LocalPlayer.Character ~= deadChar and LocalPlayer.Character ~= nil)
+                or attempts >= 15 then
+                    conn:Disconnect()
+                    respawnWatching = false
+                end
+            end)
+            -- fire remote every RESPAWN_DELAY seconds
+            while respawnWatching and attempts < 15 and AUTO_RESPAWN do
+                task.wait(RESPAWN_DELAY)
+                if LocalPlayer.Character ~= deadChar
+                   and LocalPlayer.Character ~= nil then
+                    break
+                end
+                tryRespawnRemote()
+                attempts += 1
+            end
+            conn:Disconnect()
+            respawnWatching = false
+        end)
+    end)
+end
+
+local function hookCharacter(char)
+    if not char then return end
+    respawnWatching = false
+    task.delay(0.1, function() watchHumanoid(char) end)
+end
+
+LocalPlayer.CharacterAdded:Connect(hookCharacter)
+if LocalPlayer.Character then hookCharacter(LocalPlayer.Character) end
+
+-- ============== GUI ==============
+if LocalPlayer.PlayerGui:FindFirstChild("OrbitFollowGui") then
+    LocalPlayer.PlayerGui:FindFirstChild("OrbitFollowGui"):Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name           = "OrbitFollowGui"
+ScreenGui.ResetOnSpawn   = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent         = LocalPlayer.PlayerGui
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size             = UDim2.new(0,300,0,540)
+MainFrame.Position         = UDim2.new(0.5,-150,0.5,-270)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25,25,35)
+MainFrame.BorderSizePixel  = 0
+MainFrame.Active           = true
+MainFrame.Draggable        = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,10)
+local ms = Instance.new("UIStroke", MainFrame)
+ms.Color = Color3.fromRGB(100,100,255); ms.Thickness = 2
+
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1,0,0,40); TitleBar.BackgroundColor3 = Color3.fromRGB(35,35,50)
+TitleBar.BorderSizePixel = 0
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0,10)
+local fix = Instance.new("Frame", TitleBar)
+fix.Size = UDim2.new(1,0,0,10); fix.Position = UDim2.new(0,0,1,-10)
+fix.BackgroundColor3 = Color3.fromRGB(35,35,50); fix.BorderSizePixel = 0
+
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size = UDim2.new(1,-80,1,0); TitleLabel.Position = UDim2.new(0,10,0,0)
+TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "⚡ Orbit / Follow"
+TitleLabel.TextColor3 = Color3.fromRGB(200,200,255)
+TitleLabel.TextSize = 18; TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local KBPanelBtn = Instance.new("TextButton", TitleBar)
+KBPanelBtn.Size = UDim2.new(0,30,0,30); KBPanelBtn.Position = UDim2.new(1,-70,0,5)
+KBPanelBtn.BackgroundColor3 = Color3.fromRGB(60,60,100); KBPanelBtn.Text = "⌨"
+KBPanelBtn.TextColor3 = Color3.fromRGB(200,200,255)
+KBPanelBtn.TextSize = 16; KBPanelBtn.Font = Enum.Font.GothamBold; KBPanelBtn.BorderSizePixel = 0
+Instance.new("UICorner", KBPanelBtn).CornerRadius = UDim.new(0,6)
+
+local MinBtn = Instance.new("TextButton", TitleBar)
+MinBtn.Size = UDim2.new(0,30,0,30); MinBtn.Position = UDim2.new(1,-35,0,5)
+MinBtn.BackgroundColor3 = Color3.fromRGB(60,60,80); MinBtn.Text = "—"
+MinBtn.TextColor3 = Color3.fromRGB(200,200,255)
+MinBtn.TextSize = 16; MinBtn.Font = Enum.Font.GothamBold; MinBtn.BorderSizePixel = 0
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,6)
+
+local Content = Instance.new("Frame", MainFrame)
+Content.Size = UDim2.new(1,-20,1,-50); Content.Position = UDim2.new(0,10,0,45)
+Content.BackgroundTransparency = 1
+local layout = Instance.new("UIListLayout", Content)
+layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Padding = UDim.new(0,6)
+
+-- keybind panel
+local KBPanel = Instance.new("Frame", ScreenGui)
+KBPanel.Size = UDim2.new(0,220,0,175); KBPanel.Position = UDim2.new(0.5,160,0.5,-270)
+KBPanel.BackgroundColor3 = Color3.fromRGB(20,20,32); KBPanel.BorderSizePixel = 0
+KBPanel.Visible = false; KBPanel.Active = true; KBPanel.Draggable = true
+Instance.new("UICorner", KBPanel).CornerRadius = UDim.new(0,10)
+local kbs = Instance.new("UIStroke", KBPanel)
+kbs.Color = Color3.fromRGB(100,100,200); kbs.Thickness = 1
+
+local KBTitle = Instance.new("TextLabel", KBPanel)
+KBTitle.Size = UDim2.new(1,0,0,28); KBTitle.BackgroundColor3 = Color3.fromRGB(30,30,48)
+KBTitle.BorderSizePixel = 0; KBTitle.Text = "⌨  Keybind List"
+KBTitle.TextColor3 = Color3.fromRGB(180,180,255)
+KBTitle.TextSize = 13; KBTitle.Font = Enum.Font.GothamBold
+KBTitle.TextXAlignment = Enum.TextXAlignment.Center
+Instance.new("UICorner", KBTitle).CornerRadius = UDim.new(0,10)
+local kbfix2 = Instance.new("Frame", KBTitle)
+kbfix2.Size = UDim2.new(1,0,0,10); kbfix2.Position = UDim2.new(0,0,1,-10)
+kbfix2.BackgroundColor3 = Color3.fromRGB(30,30,48); kbfix2.BorderSizePixel = 0
+
+local KBList = Instance.new("Frame", KBPanel)
+KBList.Size = UDim2.new(1,-16,1,-36); KBList.Position = UDim2.new(0,8,0,32)
+KBList.BackgroundTransparency = 1
+local kbLayout = Instance.new("UIListLayout", KBList)
+kbLayout.SortOrder = Enum.SortOrder.LayoutOrder; kbLayout.Padding = UDim.new(0,4)
+
+local keybindRows = {}
+local function addKBRow(id, action, keyName, order)
+    local row = Instance.new("Frame", KBList)
+    row.Size = UDim2.new(1,0,0,22); row.BackgroundColor3 = Color3.fromRGB(30,30,48)
+    row.BorderSizePixel = 0; row.LayoutOrder = order
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,5)
+    local aLbl = Instance.new("TextLabel", row)
+    aLbl.Size = UDim2.new(0.6,0,1,0); aLbl.Position = UDim2.new(0,6,0,0)
+    aLbl.BackgroundTransparency = 1; aLbl.Text = action
+    aLbl.TextColor3 = Color3.fromRGB(180,180,220)
+    aLbl.TextSize = 11; aLbl.Font = Enum.Font.Gotham
+    aLbl.TextXAlignment = Enum.TextXAlignment.Left
+    local kLbl = Instance.new("TextLabel", row)
+    kLbl.Size = UDim2.new(0.38,0,1,0); kLbl.Position = UDim2.new(0.62,0,0,0)
+    kLbl.BackgroundTransparency = 1; kLbl.Text = "[" .. keyName .. "]"
+    kLbl.TextColor3 = Color3.fromRGB(140,140,255)
+    kLbl.TextSize = 11; kLbl.Font = Enum.Font.GothamBold
+    kLbl.TextXAlignment = Enum.TextXAlignment.Right
+    keybindRows[id] = kLbl
+end
+
+addKBRow("orbit",   "Orbit / TP",    currentKeybind.Name,        1)
+addKBRow("follow",  "Follow toggle", currentFollowKeybind.Name,  2)
+addKBRow("gui",     "Show/Hide GUI", GUI_TOGGLE_KEYBIND.Name,    3)
+addKBRow("kbpanel", "Keybind panel", UI_TOGGLE_KEYBIND.Name,     4)
+addKBRow("respawn", "Auto-respawn",  "Remote (focus-free)",      5)
+
+-- helpers
+local function sectionLabel(txt, order)
+    local l = Instance.new("TextLabel", Content)
+    l.Size = UDim2.new(1,0,0,16); l.BackgroundTransparency = 1
+    l.Text = txt; l.TextColor3 = Color3.fromRGB(150,150,200)
+    l.TextSize = 11; l.Font = Enum.Font.GothamBold
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.LayoutOrder = order
+    return l
+end
+
+local function makeToggleRow(labelTxt, order, init, cb)
+    local row = Instance.new("Frame", Content)
+    row.Size = UDim2.new(1,0,0,32); row.BackgroundColor3 = Color3.fromRGB(35,35,50)
+    row.BorderSizePixel = 0; row.LayoutOrder = order
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(0.62,0,1,0); lbl.Position = UDim2.new(0,10,0,0)
+    lbl.BackgroundTransparency = 1; lbl.Text = labelTxt
+    lbl.TextColor3 = Color3.fromRGB(220,220,255)
+    lbl.TextSize = 13; lbl.Font = Enum.Font.Gotham
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local btn = Instance.new("TextButton", row)
+    btn.Size = UDim2.new(0,55,0,22); btn.Position = UDim2.new(1,-63,0.5,-11)
+    btn.BackgroundColor3 = init and Color3.fromRGB(80,200,80) or Color3.fromRGB(200,60,60)
+    btn.Text = init and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.TextSize = 12; btn.Font = Enum.Font.GothamBold; btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    btn.MouseButton1Click:Connect(cb)
+    return btn
+end
+
+local function makeKBRow(labelTxt, order, key, bindType)
+    local row = Instance.new("Frame", Content)
+    row.Size = UDim2.new(1,0,0,32); row.BackgroundColor3 = Color3.fromRGB(35,35,50)
+    row.BorderSizePixel = 0; row.LayoutOrder = order
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(0.52,0,1,0); lbl.Position = UDim2.new(0,10,0,0)
+    lbl.BackgroundTransparency = 1; lbl.Text = labelTxt
+    lbl.TextColor3 = Color3.fromRGB(220,220,255)
+    lbl.TextSize = 13; lbl.Font = Enum.Font.Gotham
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local kbtn = Instance.new("TextButton", row)
+    kbtn.Size = UDim2.new(0,75,0,22); kbtn.Position = UDim2.new(1,-83,0.5,-11)
+    kbtn.BackgroundColor3 = Color3.fromRGB(50,50,75)
+    kbtn.Text = "[" .. key.Name .. "]"; kbtn.TextColor3 = Color3.fromRGB(180,180,255)
+    kbtn.TextSize = 12; kbtn.Font = Enum.Font.GothamBold; kbtn.BorderSizePixel = 0
+    Instance.new("UICorner", kbtn).CornerRadius = UDim.new(0,6)
+    kbtn.MouseButton1Click:Connect(function()
+        kbtn.Text = "[...]"
+        kbtn.BackgroundColor3 = Color3.fromRGB(100,100,150)
+        waitingForKeybind = bindType
+    end)
+    return kbtn
+end
+
+-- content
+sectionLabel("TARGET", 1)
+
+local targetDisplay = Instance.new("TextLabel", Content)
+targetDisplay.Size = UDim2.new(1,0,0,18); targetDisplay.BackgroundTransparency = 1
+targetDisplay.Text = "Target: Nearest"; targetDisplay.TextColor3 = Color3.fromRGB(100,220,255)
+targetDisplay.TextSize = 12; targetDisplay.Font = Enum.Font.GothamBold
+targetDisplay.TextXAlignment = Enum.TextXAlignment.Left; targetDisplay.LayoutOrder = 2
+
+local listContainer = Instance.new("Frame", Content)
+listContainer.Size = UDim2.new(1,0,0,100); listContainer.BackgroundColor3 = Color3.fromRGB(20,20,30)
+listContainer.BorderSizePixel = 0; listContainer.LayoutOrder = 3; listContainer.ClipsDescendants = true
+Instance.new("UICorner", listContainer).CornerRadius = UDim.new(0,8)
+
+local scrollFrame = Instance.new("ScrollingFrame", listContainer)
+scrollFrame.Size = UDim2.new(1,0,1,0); scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0; scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100,100,200)
+scrollFrame.CanvasSize = UDim2.new(0,0,0,0)
+local scrollLayout = Instance.new("UIListLayout", scrollFrame)
+scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder; scrollLayout.Padding = UDim.new(0,2)
+
+local selectedBtn = nil
+
+local function makePlayerBtn(plr)
+    local isNearest = (plr == nil)
+    local displayName = isNearest
+        and "⟳ Nearest (auto)"
+        or  plr.DisplayName .. "  [" .. plr.Name .. "]"
+    local btn = Instance.new("TextButton", scrollFrame)
+    btn.Size = UDim2.new(1,-8,0,24)
+    btn.BackgroundColor3 = Color3.fromRGB(35,35,55)
+    btn.Text = displayName
+    btn.TextColor3 = isNearest and Color3.fromRGB(100,220,100) or Color3.fromRGB(220,220,255)
+    btn.TextSize = 11; btn.Font = Enum.Font.Gotham
+    btn.TextXAlignment = Enum.TextXAlignment.Left; btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
+    local pad = Instance.new("UIPadding", btn); pad.PaddingLeft = UDim.new(0,8)
+
+    if isNearest and targetPlayerPtr == nil and targetPlayerName == "" then
+        btn.BackgroundColor3 = Color3.fromRGB(60,60,120); selectedBtn = btn
+    elseif not isNearest and plr and plr.Name == targetPlayerName then
+        btn.BackgroundColor3 = Color3.fromRGB(60,60,120); selectedBtn = btn
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        if selectedBtn then selectedBtn.BackgroundColor3 = Color3.fromRGB(35,35,55) end
+        btn.BackgroundColor3 = Color3.fromRGB(60,60,120); selectedBtn = btn
+        if isNearest then
+            setTarget(nil); targetDisplay.Text = "Target: Nearest"
+        else
+            setTarget(plr); targetDisplay.Text = "Target: " .. plr.DisplayName
+        end
+    end)
+    return btn
+end
+
+local function rebuildPlayerList()
+    for _, c in ipairs(scrollFrame:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    selectedBtn = nil; makePlayerBtn(nil)
+    local count = 1
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then makePlayerBtn(plr); count += 1 end
+    end
+    scrollFrame.CanvasSize = UDim2.new(0,0,0, count * 26)
+end
+
+rebuildPlayerList()
+Players.PlayerAdded:Connect(function() task.wait(0.15); rebuildPlayerList() end)
+Players.PlayerRemoving:Connect(function(plr)
+    if plr == targetPlayerPtr or plr.Name == targetPlayerName then
+        setTarget(nil); targetDisplay.Text = "Target: Nearest"
+    end
+    task.wait(0.05); rebuildPlayerList()
+end)
+
+sectionLabel("TELEPORT", 4)
+local orbitBtn   = makeToggleRow("Orbit (TP In Front)", 5, false, function()
+    orbitEnabled = not orbitEnabled
+end)
+local orbitKBBtn = makeKBRow("Orbit Keybind", 6, currentKeybind, "orbit")
+
+sectionLabel("FOLLOW", 7)
+local followKBBtn = makeKBRow("Follow Keybind", 9, currentFollowKeybind, "follow")
+
+sectionLabel("ACTIONS", 10)
+local tpOnceBtn = Instance.new("TextButton", Content)
+tpOnceBtn.Size = UDim2.new(1,0,0,32); tpOnceBtn.LayoutOrder = 11
+tpOnceBtn.BackgroundColor3 = Color3.fromRGB(60,60,120)
+tpOnceBtn.Text = "⚡ TP In Front Once"
+tpOnceBtn.TextColor3 = Color3.fromRGB(220,220,255)
+tpOnceBtn.TextSize = 13; tpOnceBtn.Font = Enum.Font.GothamBold; tpOnceBtn.BorderSizePixel = 0
+Instance.new("UICorner", tpOnceBtn).CornerRadius = UDim.new(0,8)
+tpOnceBtn.MouseButton1Click:Connect(teleportInFront)
+
+sectionLabel("AUTO RESPAWN", 12)
+local respawnBtn
+respawnBtn = makeToggleRow("Auto Respawn (FFA)", 13, AUTO_RESPAWN, function()
+    AUTO_RESPAWN = not AUTO_RESPAWN
+    respawnBtn.Text             = AUTO_RESPAWN and "ON" or "OFF"
+    respawnBtn.BackgroundColor3 = AUTO_RESPAWN
+        and Color3.fromRGB(80,200,80) or Color3.fromRGB(200,60,60)
+end)
+
+local StatusLabel = Instance.new("TextLabel", Content)
+StatusLabel.Size = UDim2.new(1,0,0,18); StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Status: Idle"; StatusLabel.TextColor3 = Color3.fromRGB(150,255,150)
+StatusLabel.TextSize = 11; StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Center; StatusLabel.LayoutOrder = 14
+
+sectionLabel("SETTINGS", 15)
+local distRow = Instance.new("Frame", Content)
+distRow.Size = UDim2.new(1,0,0,32); distRow.BackgroundColor3 = Color3.fromRGB(35,35,50)
+distRow.BorderSizePixel = 0; distRow.LayoutOrder = 16
+Instance.new("UICorner", distRow).CornerRadius = UDim.new(0,8)
+local distLbl = Instance.new("TextLabel", distRow)
+distLbl.Size = UDim2.new(0.52,0,1,0); distLbl.Position = UDim2.new(0,10,0,0)
+distLbl.BackgroundTransparency = 1; distLbl.Text = "Distance: " .. OFFSET_DISTANCE
+distLbl.TextColor3 = Color3.fromRGB(220,220,255)
+distLbl.TextSize = 13; distLbl.Font = Enum.Font.Gotham
+distLbl.TextXAlignment = Enum.TextXAlignment.Left
+local function makeDistBtn(txt, xOff, col, delta)
+    local b = Instance.new("TextButton", distRow)
+    b.Size = UDim2.new(0,28,0,22); b.Position = UDim2.new(1,xOff,0.5,-11)
+    b.BackgroundColor3 = col; b.Text = txt; b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.TextSize = 15; b.Font = Enum.Font.GothamBold; b.BorderSizePixel = 0
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    b.MouseButton1Click:Connect(function()
+        OFFSET_DISTANCE = math.clamp(OFFSET_DISTANCE + delta, 1, 20)
+        distLbl.Text = "Distance: " .. OFFSET_DISTANCE
+    end)
+end
+makeDistBtn("-", -100, Color3.fromRGB(200,80,80), -1)
+makeDistBtn("+", -64,  Color3.fromRGB(80,200,80),  1)
+
+-- follow loop
+local function updateStatus()
+    if followEnabled then
+        local plr, hrp = getTargetHRP()
+        if hrp then
+            StatusLabel.Text = "Following: " .. (plr and plr.DisplayName or "?")
+            StatusLabel.TextColor3 = Color3.fromRGB(100,200,255)
+        else
+            StatusLabel.Text = "Follow ON — no valid target"
+            StatusLabel.TextColor3 = Color3.fromRGB(255,200,100)
+        end
+    elseif orbitEnabled then
+        StatusLabel.Text = "Orbit ON — keybind to TP"
+        StatusLabel.TextColor3 = Color3.fromRGB(200,200,100)
+    else
+        StatusLabel.Text = "Status: Idle"
+        StatusLabel.TextColor3 = Color3.fromRGB(150,255,150)
+    end
+end
+
+local function stopFollow()
+    if followConnection then followConnection:Disconnect(); followConnection = nil end
+    accumDT = 0
+end
+
+local function startFollow()
+    stopFollow()
+    followConnection = RunService.Heartbeat:Connect(function(dt)
+        if not followEnabled then stopFollow(); return end
+        accumDT += dt
+        if accumDT < FOLLOW_UPDATE_RATE then return end
+        accumDT = 0
+        local _, localHRP = getLocalCharacter()
+        if not localHRP then return end
+        local _, targetHRP = getTargetHRP()
+        if not targetHRP then return end
+        localHRP.CFrame = getInFrontCFrame(targetHRP)
+        updateStatus()
+    end)
+end
+
+local followBtn
+local function toggleFollow()
+    followEnabled = not followEnabled
+    followBtn.Text             = followEnabled and "ON"  or "OFF"
+    followBtn.BackgroundColor3 = followEnabled
+        and Color3.fromRGB(80,200,80) or Color3.fromRGB(200,60,60)
+    if followEnabled then startFollow() else stopFollow() end
+    updateStatus()
+end
+followBtn = makeToggleRow("Follow", 8, false, toggleFollow)
+
+-- minimize
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized       = not minimized
+    Content.Visible = not minimized
+    MainFrame.Size  = minimized and UDim2.new(0,300,0,40) or UDim2.new(0,300,0,540)
+    MinBtn.Text     = minimized and "+" or "—"
+end)
+
+-- kb panel
+local function toggleKBPanel()
+    keybindPanelVisible = not keybindPanelVisible
+    KBPanel.Visible     = keybindPanelVisible
+    KBPanelBtn.BackgroundColor3 = keybindPanelVisible
+        and Color3.fromRGB(100,100,180) or Color3.fromRGB(60,60,100)
+end
+KBPanelBtn.MouseButton1Click:Connect(toggleKBPanel)
+
+-- input
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    local kc = input.KeyCode
+
+    if waitingForKeybind then
+        if waitingForKeybind == "orbit" then
+            currentKeybind = kc; orbitKBBtn.Text = "[" .. kc.Name .. "]"
+            orbitKBBtn.BackgroundColor3 = Color3.fromRGB(50,50,75)
+            if keybindRows["orbit"] then keybindRows["orbit"].Text = "[" .. kc.Name .. "]" end
+        elseif waitingForKeybind == "follow" then
+            currentFollowKeybind = kc; followKBBtn.Text = "[" .. kc.Name .. "]"
+            followKBBtn.BackgroundColor3 = Color3.fromRGB(50,50,75)
+            if keybindRows["follow"] then keybindRows["follow"].Text = "[" .. kc.Name .. "]" end
+        end
+        waitingForKeybind = nil; return
+    end
+
+    if kc == GUI_TOGGLE_KEYBIND then
+        guiVisible = not guiVisible; MainFrame.Visible = guiVisible
+        if not guiVisible then KBPanel.Visible = false end; return
+    end
+    if kc == UI_TOGGLE_KEYBIND then toggleKBPanel(); return end
+    if kc == currentKeybind then
+        if orbitEnabled then
+            teleportInFront()
+        else
+            orbitEnabled = not orbitEnabled
+            orbitBtn.Text             = orbitEnabled and "ON" or "OFF"
+            orbitBtn.BackgroundColor3 = orbitEnabled
+                and Color3.fromRGB(80,200,80) or Color3.fromRGB(200,60,60)
+            if orbitEnabled then teleportInFront() end
+        end
+        updateStatus(); return
+    end
+    if kc == currentFollowKeybind then toggleFollow(); return end
+end)
+
+task.spawn(function()
+    while task.wait(0.5) do updateStatus() end
+end)
+
+print("[Orbit/Follow] loaded")
+print("  Orbit    : " .. currentKeybind.Name)
+print("  Follow   : " .. currentFollowKeybind.Name)
+print("  GUI      : " .. GUI_TOGGLE_KEYBIND.Name)
+print("  KB Panel : " .. UI_TOGGLE_KEYBIND.Name)
+print("  Respawn  : remote fire, focus-independent") -- ============== AUTO RESPAWN ==============
+-- Fires RespawnNow remote immediately on death, then every
+-- RESPAWN_INTERVAL seconds via Heartbeat accumulator.
+-- No task.wait in the fire path — no drift, no focus dependency.
+
+local RESPAWN_INTERVAL = 0.2   -- how often to retry after first fire
+
+local function tryRespawnRemote()
+    local rs     = game:GetService("ReplicatedStorage")
+    local duels  = rs:FindFirstChild("Remotes") and rs.Remotes:FindFirstChild("Duels")
+    local remote = duels and duels:FindFirstChild("RespawnNow")
+    if remote and remote:IsA("RemoteEvent") then
+        pcall(function() remote:FireServer() end)
+        return true
+    end
+    return false
+end
+
+local function watchHumanoid(char)
+    if respawnWatching then return end
+    local hum = char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+    respawnWatching = true
+
+    hum.Died:Connect(function()
+        if not AUTO_RESPAWN then respawnWatching = false; return end
+        task.spawn(function()
+            local deadChar   = char
+            local accum      = 0
+            local attempts   = 0
+            local maxAttempts = 20   -- 20 × 0.2s = 4s max window
+
+            -- fire immediately on death — no initial delay
+            tryRespawnRemote()
+            attempts += 1
+
+            local conn
+            conn = RunService.Heartbeat:Connect(function(dt)
+                -- already respawned — clean up
+                if LocalPlayer.Character ~= deadChar
+                   and LocalPlayer.Character ~= nil then
+                    conn:Disconnect()
+                    respawnWatching = false
+                    return
+                end
+
+                -- toggle turned off mid-respawn
+                if not AUTO_RESPAWN then
+                    conn:Disconnect()
+                    respawnWatching = false
+                    return
+                end
+
+                -- hit attempt cap
+                if attempts >= maxAttempts then
+                    conn:Disconnect()
+                    respawnWatching = false
+                    return
+                end
+
+                -- accumulate dt, fire every RESPAWN_INTERVAL
+                accum += dt
+                if accum >= RESPAWN_INTERVAL then
+                    accum = 0
+                    tryRespawnRemote()
+                    attempts += 1
+                end
+            end)
+        end)
+    end)
+end
+
+local function hookCharacter(char)
+    if not char then return end
+    respawnWatching = false
+    task.delay(0.1, function() watchHumanoid(char) end)
+end
+
+LocalPlayer.CharacterAdded:Connect(hookCharacter)
+if LocalPlayer.Character then hookCharacter(LocalPlayer.Character) end
